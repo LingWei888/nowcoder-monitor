@@ -22,6 +22,11 @@
       overflow: hidden;
       transition: all 0.2s ease;
       border: 2px solid #e3e8ee;
+      cursor: pointer;
+    }
+    .client-card:hover {
+      border-color: #4a90e2;
+      transform: translateY(-2px);
     }
     .client-card.online {
       border-color: #4a90e2;
@@ -224,6 +229,11 @@
           最后活跃: ${lastSeen}
         </div>
       `;
+
+      // 点击卡片打开详情
+      card.addEventListener('click', () => {
+        window.electronAPI.openClientDetail(client.id);
+      });
 
       clientsGridEl.appendChild(card);
       clientCards.set(client.id, card);
