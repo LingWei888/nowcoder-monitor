@@ -4,6 +4,7 @@ const multer = require('multer');
 const axios = require('axios');
 const path = require('path');
 const os = require('os');
+const config = require('./config');
 
 let mainWindow = null;
 let server = null;
@@ -22,11 +23,14 @@ function getLocalIP() {
 }
 
 function createMainWindow() {
+  const preloadPath = path.join(__dirname, 'preload.js');
+  console.log('Preload path:', preloadPath);
+  
   mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false
     },
@@ -34,9 +38,6 @@ function createMainWindow() {
   });
 
   mainWindow.loadFile('index.html');
-
-  // 开发时打开开发者工具
-  // mainWindow.webContents.openDevTools();
 }
 
 function startServer() {
@@ -112,8 +113,8 @@ function startServer() {
     res.json(clients);
   });
 
-  const PORT = 3000;
-  server = expressApp.listen(PORT, '0.0.0.0', () => {
+  const PORT = config.server.port;
+  server = expressApp.listen(PORT, config.server.host, () => {
     console.log(`Monitor server running on port ${PORT}`);
     const localIP = getLocalIP();
     console.log(`Local IP: ${localIP}`);
@@ -125,18 +126,18 @@ function startServer() {
 
 async function registerToWeb(ip) {
   try {
-    await axios.post('http://api-acnowcoder.exitcode.cn/monitors', {
+    await axios.post(`${config.webApi.baseUrl}${config.webApi.endpoints.register}`, {
       ip,
-      school: '默认学校', // 可以从配置获取
-      location: '默认地点'
+      school: config.monitor.school,
+      location: config.monitor.location
     });
     console.log('Registered to web server');
 
     // 启动心跳
     setInterval(() => {
-      axios.post('http://api-acnowcoder.exitcode.cn/heartbeat', { ip })
+      axios.post(`${config.webApi.baseUrl}${config.webApi.endpoints.heartbeat}`, { ip })
         .catch(err => console.error('Heartbeat failed:', err.message));
-    }, 10000); // 每10秒心跳
+    }, config.heartbeat.interval);
   } catch (error) {
     console.error('Failed to register:', error.message);
   }
@@ -165,7 +166,11 @@ ipcMain.handle('get-server-info', () => {
     }
   }
   return {
-    port: 3000,
+    port: config.server.port,
     ips
   };
+});
+
+ipcMain.handle('get-config', () => {
+  return config;
 });
