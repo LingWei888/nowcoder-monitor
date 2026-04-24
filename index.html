@@ -89,6 +89,11 @@
       color: #718096;
       border-top: 1px solid #e3e8ee;
     }
+    .client-ip {
+      font-size: 11px;
+      color: #a0aec0;
+      margin-top: 4px;
+    }
     .empty-state {
       text-align: center;
       padding: 80px 20px;
@@ -155,6 +160,11 @@
           updateClientScreenshot(data.clientId, data.imageData, data.timestamp);
         });
 
+        // 监听客户端状态更新
+        window.electronAPI.onClientsUpdated(() => {
+          updateClients();
+        });
+
         // 定期更新客户端列表
         function updateClients() {
           fetch(`http://localhost:${window.appConfig.server.port}/clients`)
@@ -216,17 +226,22 @@
 
       const statusText = client.status === 'online' ? '在线' : '离线';
       const lastSeen = new Date(client.lastSeen).toLocaleString('zh-CN');
+      const ipInfo = client.ip && client.ip !== 'unknown' ? `<div class="client-ip">IP: ${client.ip}</div>` : '';
+      const displayName = client.name ? `${client.id} - ${client.name}` : client.id;
+      const nicknameInfo = client.nickname ? `<div style="font-size: 12px; color: #4a90e2; margin-bottom: 4px;">网名: ${client.nickname}</div>` : '';
 
       card.innerHTML = `
         <div class="client-header">
-          <span class="client-id">${client.id}</span>
+          <span class="client-id">${displayName}</span>
           <span class="status-badge ${client.status}">${statusText}</span>
         </div>
         <div class="screenshot-container" id="screenshot-${client.id}">
           <div class="waiting-text">等待上线...</div>
         </div>
         <div class="client-footer">
-          最后活跃: ${lastSeen}
+          ${nicknameInfo}
+          <div>最后活跃: ${lastSeen}</div>
+          ${ipInfo}
         </div>
       `;
 

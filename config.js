@@ -34,7 +34,19 @@ const config = {
   // 客户端列表刷新配置
   clientList: {
     refreshInterval: 5000 // 每5秒刷新一次客户端列表
+  },
+
+  // 比赛信息配置
+  exam: {
+    examUrl: 'https://ac.nowcoder.com/acm/contest/12345',
+    password: 'ABC123',
+    examTitle: '2024春季程序设计竞赛',
+    startTime: '2024-04-24T14:00:00Z',
+    endTime: '2024-04-24T17:00:00Z'
   }
+
+  // 如需切换比赛，修改以上配置即可
+  // 截图会自动存储到 screenshots/{比赛名称}/ 目录下
 };
 
 module.exports = config;
