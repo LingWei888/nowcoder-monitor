@@ -125,7 +125,7 @@ function startServer() {
 
 async function registerToWeb(ip) {
   try {
-    await axios.post('http://api-acnowcoder.exitcode.cn/api.php/monitors', {
+    await axios.post('http://api-acnowcoder.exitcode.cn/monitors', {
       ip,
       school: '默认学校', // 可以从配置获取
       location: '默认地点'
@@ -134,7 +134,7 @@ async function registerToWeb(ip) {
 
     // 启动心跳
     setInterval(() => {
-      axios.post('http://api-acnowcoder.exitcode.cn/api.php/heartbeat', { ip })
+      axios.post('http://api-acnowcoder.exitcode.cn/heartbeat', { ip })
         .catch(err => console.error('Heartbeat failed:', err.message));
     }, 10000); // 每10秒心跳
   } catch (error) {
