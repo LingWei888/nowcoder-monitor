@@ -493,6 +493,8 @@ ipcMain.handle('open-client-detail', (event, clientId) => {
     .modal img { max-width: 90%; max-height: 90%; object-fit: contain; }
     .modal-close { position: absolute; top: 20px; right: 30px; color: #fff; font-size: 40px; cursor: pointer; }
     .empty-state { text-align: center; padding: 80px 20px; color: #a0aec0; }
+    .loading-more { text-align: center; padding: 20px; color: #718096; font-size: 14px; display: none; }
+    .no-more { text-align: center; padding: 20px; color: #a0aec0; font-size: 14px; display: none; }
   </style>
 </head>
 <body>
@@ -505,6 +507,8 @@ ipcMain.handle('open-client-detail', (event, clientId) => {
     <div id="empty-state" class="empty-state" style="display: none;">
       <h3>暂无截图记录</h3>
     </div>
+    <div id="loading-more" class="loading-more">加载中...</div>
+    <div id="no-more" class="no-more">没有更多了</div>
   </div>
   <div id="modal" class="modal" onclick="closeModal()">
     <span class="modal-close">&times;</span>
@@ -514,9 +518,17 @@ ipcMain.handle('open-client-detail', (event, clientId) => {
     const clientId = '${clientId}';
     const gridEl = document.getElementById('screenshots-grid');
     const emptyStateEl = document.getElementById('empty-state');
+    const loadingMoreEl = document.getElementById('loading-more');
+    const noMoreEl = document.getElementById('no-more');
     const modal = document.getElementById('modal');
     const modalImg = document.getElementById('modal-img');
 
+    let allScreenshots = [];
+    let currentPage = 0;
+    const pageSize = 10;
+    let isLoading = false;
+
+    // 首次加载
     fetch('http://localhost:${serverPort}/screenshots/' + clientId)
       .then(res => res.json())
       .then(screenshots => {
@@ -525,16 +537,61 @@ ipcMain.handle('open-client-detail', (event, clientId) => {
           return;
         }
 
-        screenshots.forEach(screenshot => {
+        allScreenshots = screenshots;
+        loadMore();
+
+        // 添加滚动监听
+        window.addEventListener('scroll', handleScroll);
+      })
+      .catch(err => console.error('Failed to load screenshots:', err));
+
+    // 加载更多
+    function loadMore() {
+      if (isLoading || currentPage * pageSize >= allScreenshots.length) {
+        if (currentPage * pageSize >= allScreenshots.length && currentPage > 0) {
+          noMoreEl.style.display = 'block';
+        }
+        return;
+      }
+
+      isLoading = true;
+      loadingMoreEl.style.display = 'block';
+
+      setTimeout(() => {
+        const start = currentPage * pageSize;
+        const end = Math.min(start + pageSize, allScreenshots.length);
+        
+        for (let i = start; i < end; i++) {
+          const screenshot = allScreenshots[i];
           const item = document.createElement('div');
           item.className = 'screenshot-item';
           const timeStr = new Date(screenshot.timestamp).toLocaleString('zh-CN');
           const imgUrl = 'http://localhost:${serverPort}' + screenshot.path;
           item.innerHTML = '<img src="' + imgUrl + '" onclick="openModal(this.src)"><div class="screenshot-info">' + timeStr + '</div>';
           gridEl.appendChild(item);
-        });
-      })
-      .catch(err => console.error('Failed to load screenshots:', err));
+        }
+
+        currentPage++;
+        isLoading = false;
+        loadingMoreEl.style.display = 'none';
+
+        if (currentPage * pageSize >= allScreenshots.length) {
+          noMoreEl.style.display = 'block';
+        }
+      }, 100);
+    }
+
+    // 滚动监听
+    function handleScroll() {
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const windowHeight = window.innerHeight;
+      const documentHeight = document.documentElement.scrollHeight;
+
+      // 距离底部100px时加载更多
+      if (scrollTop + windowHeight >= documentHeight - 100) {
+        loadMore();
+      }
+    }
 
     function openModal(src) {
       modalImg.src = src;
