@@ -19,6 +19,23 @@
 npm install
 ```
 
+### 安装 cloudflared (内网穿透)
+
+**Windows:**
+```bash
+winget install cloudflare.cloudflared
+```
+
+**macOS:**
+```bash
+brew install cloudflared
+```
+
+**Linux:**
+```bash
+# 参考官网: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+```
+
 ### 启动应用
 
 ```bash
@@ -39,24 +56,30 @@ npm run build:win
 
 ## 功能特性
 
-### 1. 考生登录系统
+### 1. 内网穿透 (cloudflared)
+- 启动时自动开启内网穿透
+- 生成公网访问地址 (https://xxx.trycloudflare.com)
+- 在 config.js 中配置 `tunnel.enabled` 启用/禁用
+- 控制台和前端会显示公网 URL
+
+### 2. 考生登录系统
 - 独立的登录页面 (`client-login.html`)
 - 填写学号、姓名、网名
 - 选择监考服务器地址
 - 自动获取比赛链接和密码
 - 自动跳转至比赛页面
 
-### 2. 实时监控
+### 3. 实时监控
 - 座位式网格布局展示所有客户端
 - 在线/离线状态实时显示
 - 最新截图实时预览
 
-### 3. 历史截图查看
+### 4. 历史截图查看
 - 点击任意客户端卡片打开详情窗口
 - 查看该客户端的所有历史截图
 - 支持点击放大查看截图
 
-### 4. 截图存储
+### 5. 截图存储
 
 **存储位置：** `项目根目录/screenshots/`
 
@@ -75,7 +98,7 @@ monitor/
 
 **文件命名规则：** 时间戳.png（例如：1714025600000.png）
 
-### 5. API 接口
+### 6. API 接口
 
 #### 考生端接口
 
@@ -139,6 +162,10 @@ monitor/
   },
   heartbeat: {
     interval: 10000       // 心跳间隔（毫秒）
+  },
+  tunnel: {
+    enabled: true,        // 是否启用内网穿透
+    port: 3000           // 要穿透的本地端口
   }
 }
 ```

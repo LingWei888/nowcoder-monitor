@@ -6,6 +6,14 @@ const config = {
     host: '0.0.0.0'
   },
 
+  // 内网穿透配置 (cloudflared)
+  //需要先安装cloudflared
+  //并且要将环境配置好
+  tunnel: {
+    enabled: true, // 是否启用内网穿透
+    port: 3000 // 要穿透的本地端口(与server.port保持一致)
+  },
+
   // Web API 配置
   webApi: {
     baseUrl: 'http://api-acnowcoder.exitcode.cn',

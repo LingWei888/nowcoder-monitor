@@ -5,10 +5,14 @@ const axios = require('axios');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const { spawn } = require('child_process');
 const config = require('./config');
 
 let mainWindow = null;
 let server = null;
+let tunnelProcess = null;
+let currentPublicUrl = null; // 存储当前内网穿透地址
+let heartbeatIntervalId = null; // 【新增】用于保存心跳定时器 ID，防止重复启动
 
 // 获取本地IP
 function getLocalIP() {
@@ -26,7 +30,7 @@ function getLocalIP() {
 function createMainWindow() {
   const preloadPath = path.join(__dirname, 'preload.js');
   console.log('Preload path:', preloadPath);
-  
+
   mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
@@ -242,24 +246,17 @@ function startServer() {
     const { clientId } = req.params;
     const clientDir = path.join(screenshotsDir, clientId);
 
-    console.log(`请求截图列表: clientId=${clientId}, 目录=${clientDir}`);
-    console.log(`目录是否存在: ${fs.existsSync(clientDir)}`);
-
     if (!fs.existsSync(clientDir)) {
-      console.log('目录不存在，返回空数组');
       return res.json([]);
     }
 
     const files = fs.readdirSync(clientDir)
-      .filter(file => file.endsWith('.png'));
-
-    console.log(`找到 ${files.length} 个截图文件:`, files);
+        .filter(file => file.endsWith('.png'));
 
     const screenshots = files.map(file => {
       // 文件名格式: clientId_timestamp.png
       const parts = file.replace('.png', '').split('_');
       const timestamp = parseInt(parts[parts.length - 1]);
-      console.log(`文件: ${file}, 解析时间戳: ${timestamp}`);
       return {
         filename: file,
         timestamp: new Date(timestamp),
@@ -267,10 +264,6 @@ function startServer() {
       };
     }).sort((a, b) => b.timestamp - a.timestamp); // 按时间倒序
 
-    console.log(`返回 ${screenshots.length} 条记录`);
-    if (screenshots.length > 0) {
-      console.log('第一条记录:', screenshots[0]);
-    }
     res.json(screenshots);
   });
 
@@ -278,33 +271,142 @@ function startServer() {
   expressApp.use('/screenshots', express.static(path.join(__dirname, 'screenshots')));
 
   const PORT = config.server.port;
-  server = expressApp.listen(PORT, config.server.host, () => {
+
+  // 【修复一】将回调函数设为 async，以便使用 await 阻塞等待隧道启动
+  server = expressApp.listen(PORT, config.server.host, async () => {
     console.log(`Monitor server running on port ${PORT}`);
     const localIP = getLocalIP();
     console.log(`Local IP: ${localIP}`);
 
-    // 注册到Web端
-    registerToWeb(localIP);
+    if (config.tunnel.enabled) {
+      try {
+        // 等待内网穿透成功获取到 URL 后，再进行注册
+        await startTunnel(PORT);
+        startRegisterAndHeartbeat(localIP, currentPublicUrl);
+      } catch (err) {
+        console.error("内网穿透启动失败，将降级为纯局域网模式");
+        startRegisterAndHeartbeat(localIP, null);
+      }
+    } else {
+      // 未开启内网穿透，直接进行局域网注册
+      startRegisterAndHeartbeat(localIP, null);
+    }
   });
 }
 
-async function registerToWeb(ip) {
+// 【修复二】统合注册和心跳逻辑，避免心跳定时器重复创建
+async function startRegisterAndHeartbeat(ip, publicUrl = null) {
   try {
-    await axios.post(`${config.webApi.baseUrl}${config.webApi.endpoints.register}`, {
+    const registerData = {
       ip,
       school: config.monitor.school,
       location: config.monitor.location
-    });
-    console.log('Registered to web server');
+    };
 
-    // 启动心跳
-    setInterval(() => {
-      axios.post(`${config.webApi.baseUrl}${config.webApi.endpoints.heartbeat}`, { ip })
-        .catch(err => console.error('Heartbeat failed:', err.message));
+    // 如果有内网穿透地址,添加到请求数据中
+    if (publicUrl) {
+      registerData.public_url = publicUrl;
+    }
+
+    // 1. 发送初始注册请求
+    await axios.post(`${config.webApi.baseUrl}${config.webApi.endpoints.register}`, registerData);
+    console.log('✅ Registered to web server', publicUrl ? `(Public URL: ${publicUrl})` : '(Local IP Only)');
+
+    // 2. 清理可能存在的旧定时器，防止叠加
+    if (heartbeatIntervalId !== null) {
+      clearInterval(heartbeatIntervalId);
+    }
+
+    // 3. 启动唯一的心跳定时器
+    heartbeatIntervalId = setInterval(() => {
+      const heartbeatData = { ip };
+      // 动态读取全局变量，确保在运行中如果 currentPublicUrl 变化也能取到最新的
+      if (currentPublicUrl) {
+        heartbeatData.public_url = currentPublicUrl;
+      }
+
+      axios.post(`${config.webApi.baseUrl}${config.webApi.endpoints.heartbeat}`, heartbeatData)
+          .catch(err => console.error('Heartbeat failed:', err.message));
     }, config.heartbeat.interval);
+
   } catch (error) {
-    console.error('Failed to register:', error.message);
+    console.error('❌ Failed to register:', error.message);
   }
+}
+
+// 启动内网穿透 (cloudflared)
+function startTunnel(port) {
+  return new Promise((resolve, reject) => {
+    console.log('正在启动 cloudflared 内网穿透...');
+
+    // 检查 cloudflared 是否已安装
+    const checkProcess = spawn('cloudflared', ['--version']);
+
+    checkProcess.on('error', (err) => {
+      console.error('❌ cloudflared 未安装');
+      console.error('请从官网下载并安装: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/');
+      console.error('Windows用户可运行: winget install cloudflare.cloudflared');
+      reject(err);
+    });
+
+    checkProcess.stdout.on('data', (data) => {
+      console.log('✓ cloudflared 已安装:', data.toString().trim());
+
+      // 启动 tunnel
+      tunnelProcess = spawn('cloudflared', ['tunnel', '--url', `http://localhost:${port}`]);
+
+      let urlExtracted = false;
+
+      tunnelProcess.stdout.on('data', (data) => {
+        const output = data.toString();
+        console.log('[Tunnel]', output.trim());
+
+        // 提取公网 URL
+        const urlMatch = output.match(/https:\/\/[^\s]+\.trycloudflare\.com/);
+        if (urlMatch && !urlExtracted) {
+          const publicUrl = urlMatch[0];
+          currentPublicUrl = publicUrl; // 保存公网地址到全局变量
+          urlExtracted = true;
+          console.log(`\n✅ 内网穿透成功！`);
+          console.log(`🌐 公网访问地址: ${publicUrl}\n`);
+
+          // 通知主窗口显示公网地址
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('tunnel-started', { url: publicUrl });
+          }
+
+          // URL 提取完成后才 resolve，让外部流程继续（去注册）
+          resolve();
+        }
+      });
+
+      tunnelProcess.stderr.on('data', (data) => {
+        // cloudflared 的日志经常输出在 stderr，所以这里不需要抛错，仅打印即可
+        const output = data.toString();
+        // 同样在 stderr 里检查 URL（有时候 cloudflared 会把 info 打在 stderr）
+        const urlMatch = output.match(/https:\/\/[^\s]+\.trycloudflare\.com/);
+        if (urlMatch && !urlExtracted) {
+          const publicUrl = urlMatch[0];
+          currentPublicUrl = publicUrl;
+          urlExtracted = true;
+          console.log(`\n✅ 内网穿透成功！`);
+          console.log(`🌐 公网访问地址: ${publicUrl}\n`);
+
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('tunnel-started', { url: publicUrl });
+          }
+          resolve();
+        }
+      });
+
+      tunnelProcess.on('close', (code) => {
+        if (code !== 0 && !urlExtracted) {
+          console.error(`Tunnel process exited with code ${code}`);
+          reject(new Error(`Tunnel failed with code ${code}`));
+        }
+      });
+    });
+  });
 }
 
 app.whenReady().then(() => {
@@ -315,6 +417,11 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (server) {
     server.close();
+  }
+  // 关闭内网穿透进程
+  if (tunnelProcess) {
+    tunnelProcess.kill();
+    console.log('Tunnel process stopped');
   }
   app.quit();
 });
@@ -339,6 +446,13 @@ ipcMain.handle('get-config', () => {
   return config;
 });
 
+ipcMain.handle('get-tunnel-status', () => {
+  return {
+    enabled: config.tunnel.enabled,
+    running: tunnelProcess !== null
+  };
+});
+
 ipcMain.handle('open-client-detail', (event, clientId) => {
   // 创建详情窗口
   const detailWindow = new BrowserWindow({
@@ -351,9 +465,6 @@ ipcMain.handle('open-client-detail', (event, clientId) => {
     },
     title: `客户端详情 - ${clientId}`
   });
-
-  // 自动打开开发者工具
-  //detailWindow.webContents.openDevTools();
 
   const examId = config.exam.examTitle.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_');
   const serverPort = config.server.port;
@@ -406,18 +517,9 @@ ipcMain.handle('open-client-detail', (event, clientId) => {
     const modal = document.getElementById('modal');
     const modalImg = document.getElementById('modal-img');
 
-    console.log('开始加载截图，clientId:', clientId);
-    console.log('API地址:', 'http://localhost:${serverPort}/screenshots/' + clientId);
-    
     fetch('http://localhost:${serverPort}/screenshots/' + clientId)
-      .then(res => {
-        console.log('API响应状态:', res.status);
-        return res.json();
-      })
+      .then(res => res.json())
       .then(screenshots => {
-        console.log('获取到截图数据:', screenshots);
-        console.log('截图数量:', screenshots.length);
-        
         if (screenshots.length === 0) {
           emptyStateEl.style.display = 'block';
           return;
@@ -426,9 +528,8 @@ ipcMain.handle('open-client-detail', (event, clientId) => {
         screenshots.forEach(screenshot => {
           const item = document.createElement('div');
           item.className = 'screenshot-item';
-          const timeStr = screenshot.timestamp.toLocaleString('zh-CN');
+          const timeStr = new Date(screenshot.timestamp).toLocaleString('zh-CN');
           const imgUrl = 'http://localhost:${serverPort}' + screenshot.path;
-          console.log('图片URL:', imgUrl);
           item.innerHTML = '<img src="' + imgUrl + '" onclick="openModal(this.src)"><div class="screenshot-info">' + timeStr + '</div>';
           gridEl.appendChild(item);
         });
