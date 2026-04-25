@@ -26,10 +26,11 @@ function getLocalIP() {
 function createMainWindow() {
   const preloadPath = path.join(__dirname, 'preload.js');
   console.log('Preload path:', preloadPath);
-
+  
   mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
+    icon: path.join(__dirname, 'build', 'favicon.ico'),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -343,6 +344,7 @@ ipcMain.handle('open-client-detail', (event, clientId) => {
   const detailWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    icon: path.join(__dirname, 'build', 'favicon.ico'),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false

@@ -18,7 +18,7 @@ const config = {
   // 监控器信息
   monitor: {
     school: '河北科技大学',
-    location: '河北科技大学信澳联大C109'
+    location: '河北科技大学信澳联大C109-'
   },
 
   // 心跳配置
