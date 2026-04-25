@@ -10,10 +10,10 @@
     .header h1 { color: #4a90e2; font-size: 26px; margin-bottom: 10px; }
     .server-info { background: #f0f4f8; padding: 10px 18px; border-radius: 6px; display: inline-block; color: #5a6c7d; font-size: 14px; }
     .container { max-width: 1400px; margin: 30px auto; padding: 0 20px; }
-    .clients-grid { 
-      display: grid; 
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); 
-      gap: 20px; 
+    .clients-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
       margin-top: 20px;
     }
     .client-card {
@@ -107,6 +107,25 @@
     .empty-state p {
       font-size: 15px;
     }
+    .export-btn {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 10px 20px;
+      background: #4a90e2;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      z-index: 100;
+      transition: all 0.2s;
+    }
+    .export-btn:hover {
+      background: #357abd;
+      transform: translateY(-2px);
+    }
   </style>
 </head>
 <body>
@@ -114,6 +133,8 @@
     <h1>考试监控系统</h1>
     <div class="server-info" id="server-info">加载中...</div>
   </div>
+
+  <button class="export-btn" id="export-btn" onclick="exportStudents()"><svg t="1777104772212" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1678" width="16" height="16"><path d="M921.6 409.6v512H102.4V409.6H0v614.4h1024V409.6z" fill="#fff" p-id="1679"></path><path d="M580.74112 261.64224L876.65664 409.6l-307.2-409.6-307.2 409.6 296.97024-148.49024c-7.69024 250.58304-162.19136 447.03744-399.37024 447.03744v163.84c330.33216 0 426.48576-239.62624 420.88448-610.34496z" fill="#fff" p-id="1680"></path></svg> 导出考生信息</button>
 
   <div class="container">
     <div id="clients-grid" class="clients-grid">
@@ -147,7 +168,7 @@
         window.electronAPI.getServerInfo().then(info => {
           console.log('Server info received:', info);
           serverInfoEl.innerHTML = `
-            <strong>端口:</strong> ${info.port} | 
+            <strong>端口:</strong> ${info.port} |
             <strong>IP:</strong> ${info.ips.join(', ')}
           `;
         }).catch(err => {
@@ -199,7 +220,7 @@
 
       clients.forEach(client => {
         updatedClients.add(client.id);
-        
+
         if (clientCards.has(client.id)) {
           // 更新现有卡片
           updateClientCard(client);
@@ -298,6 +319,24 @@
         statusBadge.className = 'status-badge online';
         statusBadge.textContent = '在线';
       }
+    }
+
+    // 导出考生信息
+    function exportStudents() {
+      if (!window.appConfig) {
+        alert('配置未加载，请稍后再试');
+        return;
+      }
+
+      const url = `http://localhost:${window.appConfig.server.port}/export-students`;
+
+      // 创建隐藏的a标签触发下载
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = '';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
   </script>
 </body>

@@ -6,6 +6,7 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const XLSX = require('xlsx');
 const config = require('./config');
 
 let mainWindow = null;
@@ -269,6 +270,57 @@ function startServer() {
 
   // 提供截图文件访问
   expressApp.use('/screenshots', express.static(path.join(__dirname, 'screenshots')));
+
+  // 导出考生信息为Excel
+  expressApp.get('/export-students', (req, res) => {
+    try {
+      const clients = Array.from(connectedClients.values());
+      
+      if (clients.length === 0) {
+        return res.status(404).json({ error: '没有考生数据' });
+      }
+
+      // 准备Excel数据
+      const excelData = clients.map(client => ({
+        '学校': config.monitor.school,
+        '学号': client.id,
+        '姓名': client.name || '',
+        '滚榜昵称': client.nickname || '',
+        '最后活跃时间': client.lastSeen ? new Date(client.lastSeen).toLocaleString('zh-CN') : ''
+      }));
+
+      // 创建工作簿和工作表
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet(excelData);
+
+      // 设置列宽
+      worksheet['!cols'] = [
+        { wch: 20 }, // 学校
+        { wch: 15 }, // 学号
+        { wch: 15 }, // 姓名
+        { wch: 20 }, // 滚榜昵称
+        { wch: 25 }  // 最后活跃时间
+      ];
+
+      // 将工作表添加到工作簿
+      XLSX.utils.book_append_sheet(workbook, worksheet, '考生信息');
+
+      // 生成Excel文件buffer
+      const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+      // 设置响应头
+      const timestamp = new Date().getTime();
+      const filename = `考生信息_${timestamp}.xlsx`;
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+      res.send(excelBuffer);
+
+      console.log(`已导出 ${clients.length} 名考生信息到Excel`);
+    } catch (error) {
+      console.error('导出Excel失败:', error);
+      res.status(500).json({ error: '导出失败: ' + error.message });
+    }
+  });
 
   const PORT = config.server.port;
 
